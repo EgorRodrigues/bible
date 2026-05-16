@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arquitetura e fluxo • Bible Study</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      :root { --pico-font-size: 100%; }
+      code, pre { font-variant-ligatures: none; }
+      .muted { opacity: 0.75; }
+      .grid-2 { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+      @media (min-width: 900px) { .grid-2 { grid-template-columns: 280px 1fr; } }
+      aside nav a { display: block; padding: 0.35rem 0.5rem; border-radius: 0.4rem; }
+      aside nav a[aria-current="page"] { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+    </style>
+  </head>
+  <body>
+    <header class="container">
+      <hgroup>
+        <h1>Arquitetura e fluxo</h1>
+        <p class="muted">Como os dados são carregados e viram telas</p>
+      </hgroup>
+    </header>
+    <main class="container">
+      <div class="grid-2">
+        <aside>
+          <nav aria-label="Navegação">
+            <a href="./index.html">Início</a>
+            <a href="./arquivos.html">Arquivos principais</a>
+            <a href="./arquitetura.html" aria-current="page">Arquitetura e fluxo</a>
+            <a href="./dados.html">Dados (JSON/XML)</a>
+            <a href="./desenvolvimento.html">Desenvolvimento</a>
+          </nav>
+        </aside>
+        <section>
+          <article>
+            <header><h2>Fluxo de UI</h2></header>
+            <pre><code>HomePage
+  ├─ Dropdown de versões (json/index.json)
+  └─ Lista de testamentos
+       ├─ Velho Testamento → TestamentBooksPage → ChaptersPage → VersesPage
+       └─ Novo Testamento  → TestamentBooksPage → ChaptersPage → VersesPage
+            </code></pre>
+          </article>
+
+          <article>
+            <header><h2>Camada de dados (BibleRepository)</h2></header>
+            <ul>
+              <li><strong>listVersions()</strong> carrega <code>json/index.json</code> e monta a lista de versões.</li>
+              <li><strong>listBooks(version)</strong> carrega <code>json/&lt;version&gt;.json</code> e monta <code>BibleBookRef</code> com nome/abbrev e <strong>quantidade de capítulos</strong>.</li>
+              <li><strong>loadChapter(version, bookIndex, chapterIndex)</strong> lê apenas o capítulo solicitado e devolve uma lista de strings (versículos).</li>
+            </ul>
+            <p class="muted">
+              O repositório usa cache: uma vez que a versão foi carregada, ela fica em memória para evitar reler o asset a cada navegação.
+            </p>
+          </article>
+
+          <article>
+            <header><h2>Por que existe _JsonScanner?</h2></header>
+            <p>
+              Os arquivos <code>json/&lt;versão&gt;.json</code> podem ser grandes. Decodificar o JSON inteiro com <code>json.decode</code>
+              para só pegar um livro/capítulo pode ser custoso.
+            </p>
+            <p>
+              O <code>_JsonScanner</code> faz uma varredura de string para:
+            </p>
+            <ul>
+              <li>achar os spans (início/fim) dos livros no array do topo;</li>
+              <li>encontrar o campo <code>chapters</code> do livro;</li>
+              <li>pegar o N-ésimo capítulo do array de capítulos;</li>
+              <li>decodificar apenas aquele trecho pequeno com <code>json.decode</code>.</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>Regra de Velho/Novo Testamento</h2></header>
+            <p>
+              A separação é feita por índice: os 39 primeiros livros (índices 0–38) são Velho Testamento e o restante é Novo Testamento.
+              Isso funciona porque os arquivos JSON estão em ordem canônica.
+            </p>
+          </article>
+
+          <article>
+            <header><h2>Bug corrigido: “todo livro tem 1 capítulo”</h2></header>
+            <p>
+              A contagem de itens do array <code>chapters</code> estava incorreta e só reconhecia o primeiro item. A correção ajustou a função
+              que conta itens de um array no nível 1, incluindo itens que começam com <code>"</code> (strings), números e outros valores, e reinicia a leitura ao encontrar vírgulas.
+            </p>
+          </article>
+        </section>
+      </div>
+    </main>
+    <footer class="container">
+      <small class="muted"><a href="./index.html">Voltar ao início</a></small>
+    </footer>
+  </body>
+</html>

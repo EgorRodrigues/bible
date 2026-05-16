@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Desenvolvimento • Bible Study</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      :root { --pico-font-size: 100%; }
+      code, pre { font-variant-ligatures: none; }
+      .muted { opacity: 0.75; }
+      .grid-2 { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+      @media (min-width: 900px) { .grid-2 { grid-template-columns: 280px 1fr; } }
+      aside nav a { display: block; padding: 0.35rem 0.5rem; border-radius: 0.4rem; }
+      aside nav a[aria-current="page"] { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+    </style>
+  </head>
+  <body>
+    <header class="container">
+      <hgroup>
+        <h1>Desenvolvimento</h1>
+        <p class="muted">Como rodar, testar e evoluir o projeto</p>
+      </hgroup>
+    </header>
+    <main class="container">
+      <div class="grid-2">
+        <aside>
+          <nav aria-label="Navegação">
+            <a href="./index.html">Início</a>
+            <a href="./arquivos.html">Arquivos principais</a>
+            <a href="./arquitetura.html">Arquitetura e fluxo</a>
+            <a href="./dados.html">Dados (JSON/XML)</a>
+            <a href="./desenvolvimento.html" aria-current="page">Desenvolvimento</a>
+          </nav>
+        </aside>
+        <section>
+          <article>
+            <header><h2>Comandos úteis</h2></header>
+            <pre><code>flutter pub get
+flutter run
+flutter test</code></pre>
+          </article>
+
+          <article>
+            <header><h2>Testes</h2></header>
+            <ul>
+              <li>O teste principal é <code>test/widget_test.dart</code>.</li>
+              <li>Ele usa um <code>AssetBundle</code> fake para isolar a UI e validar o fluxo sem depender dos arquivos reais em <code>json/</code>.</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>Pontos de atenção</h2></header>
+            <ul>
+              <li><strong>Arquivos grandes</strong>: carregar um JSON inteiro pode ser pesado; por isso existe o scanner que lê trechos.</li>
+              <li><strong>Ordem dos livros</strong>: a separação Velho/Novo assume que o JSON está em ordem canônica.</li>
+              <li><strong>Erros de parsing</strong>: se algum arquivo JSON estiver malformado, o app vai falhar ao listar livros/capítulos daquela versão.</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>Próximos passos típicos (se você quiser)</h2></header>
+            <ul>
+              <li>Extrair <code>BibleRepository</code> e <code>_JsonScanner</code> para arquivos separados em <code>lib/</code>.</li>
+              <li>Adicionar busca (livro/capítulo/verso ou texto).</li>
+              <li>Adicionar favoritos e histórico (persistência local).</li>
+            </ul>
+          </article>
+        </section>
+      </div>
+    </main>
+    <footer class="container">
+      <small class="muted"><a href="./index.html">Voltar ao início</a></small>
+    </footer>
+  </body>
+</html>

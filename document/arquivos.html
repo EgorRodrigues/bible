@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arquivos principais • Bible Study</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      :root { --pico-font-size: 100%; }
+      code, pre { font-variant-ligatures: none; }
+      .muted { opacity: 0.75; }
+      .grid-2 { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+      @media (min-width: 900px) { .grid-2 { grid-template-columns: 280px 1fr; } }
+      aside nav a { display: block; padding: 0.35rem 0.5rem; border-radius: 0.4rem; }
+      aside nav a[aria-current="page"] { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+      h3 { margin-top: 1.25rem; }
+    </style>
+  </head>
+  <body>
+    <header class="container">
+      <hgroup>
+        <h1>Arquivos principais</h1>
+        <p class="muted">Onde está o que importa no projeto</p>
+      </hgroup>
+    </header>
+    <main class="container">
+      <div class="grid-2">
+        <aside>
+          <nav aria-label="Navegação">
+            <a href="./index.html">Início</a>
+            <a href="./arquivos.html" aria-current="page">Arquivos principais</a>
+            <a href="./arquitetura.html">Arquitetura e fluxo</a>
+            <a href="./dados.html">Dados (JSON/XML)</a>
+            <a href="./desenvolvimento.html">Desenvolvimento</a>
+          </nav>
+        </aside>
+        <section>
+          <article>
+            <header><h2>lib/</h2></header>
+            <h3>lib/main.dart</h3>
+            <ul>
+              <li>Ponto de entrada do app (<code>main()</code>).</li>
+              <li>Configura handlers de erro (<code>FlutterError.onError</code> e <code>PlatformDispatcher.instance.onError</code>).</li>
+              <li>Sobe o widget raiz (<code>BibleStudyApp</code> → <code>BibleApp</code>).</li>
+            </ul>
+
+            <h3>lib/bible_app.dart</h3>
+            <ul>
+              <li>UI inteira do app (Home, lista de testamentos, livros, capítulos e versículos).</li>
+              <li><strong>BibleRepository</strong>: carrega assets em <code>json/</code> e entrega versões/livros/capítulos.</li>
+              <li><strong>_JsonScanner</strong>: parser “rápido” baseado em string para localizar trechos no JSON sem decodificar o arquivo inteiro de uma vez.</li>
+              <li>Regras de navegação: Home → Testamento → Livro → Capítulo.</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>json/</h2></header>
+            <ul>
+              <li><code>json/index.json</code>: índice de idiomas e versões (nome + abreviação).</li>
+              <li><code>json/&lt;abbreviation&gt;.json</code>: conteúdo da Bíblia (array de livros com <code>chapters</code>).</li>
+              <li>É o “backend” do app hoje: tudo é carregado via <code>AssetBundle</code>.</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>xml/</h2></header>
+            <ul>
+              <li>Fontes em XML equivalentes às versões de <code>json/</code>.</li>
+              <li>No app atual, os XML não são consumidos diretamente (somente o JSON).</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>test/</h2></header>
+            <h3>test/widget_test.dart</h3>
+            <ul>
+              <li>Teste de widget que valida o fluxo básico: carregar livros, abrir testamento, abrir livro, abrir capítulos.</li>
+              <li>Usa um <code>AssetBundle</code> fake para simular os assets <code>json/index.json</code> e <code>json/pt_nvi.json</code>.</li>
+            </ul>
+          </article>
+
+          <article>
+            <header><h2>pubspec.yaml</h2></header>
+            <ul>
+              <li>Declara dependências e assets do Flutter.</li>
+              <li>Inclui a pasta <code>json/</code> como assets do app, permitindo <code>rootBundle.loadString(...)</code>.</li>
+            </ul>
+          </article>
+        </section>
+      </div>
+    </main>
+    <footer class="container">
+      <small class="muted"><a href="./index.html">Voltar ao início</a></small>
+    </footer>
+  </body>
+</html>

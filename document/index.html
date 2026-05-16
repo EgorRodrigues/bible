@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Documentação • Bible Study</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css" />
+    <style>
+      :root { --pico-font-size: 100%; }
+      code, pre { font-variant-ligatures: none; }
+      .muted { opacity: 0.75; }
+      .grid-2 { display: grid; grid-template-columns: 1fr; gap: 1.25rem; }
+      @media (min-width: 900px) { .grid-2 { grid-template-columns: 280px 1fr; } }
+      aside nav a { display: block; padding: 0.35rem 0.5rem; border-radius: 0.4rem; }
+      aside nav a[aria-current="page"] { background: var(--pico-primary-background); color: var(--pico-primary-inverse); }
+    </style>
+  </head>
+  <body>
+    <header class="container">
+      <hgroup>
+        <h1>Bible Study</h1>
+        <p class="muted">Guia rápido do código, estrutura do projeto e formato dos dados</p>
+      </hgroup>
+    </header>
+    <main class="container">
+      <div class="grid-2">
+        <aside>
+          <nav aria-label="Navegação">
+            <a href="./index.html" aria-current="page">Início</a>
+            <a href="./arquivos.html">Arquivos principais</a>
+            <a href="./arquitetura.html">Arquitetura e fluxo</a>
+            <a href="./dados.html">Dados (JSON/XML)</a>
+            <a href="./desenvolvimento.html">Desenvolvimento</a>
+          </nav>
+        </aside>
+        <section>
+          <article>
+            <header>
+              <h2>Visão geral</h2>
+            </header>
+            <p>Este app Flutter carrega versões da Bíblia a partir de arquivos JSON em <strong>assets</strong> e navega em três níveis:</p>
+            <ol>
+              <li>Seleção de versão</li>
+              <li>Seleção de testamento (Velho/Novo)</li>
+              <li>Seleção de livro → capítulo → versículos</li>
+            </ol>
+            <p>A lógica do app está concentrada em <strong>um arquivo principal</strong> (UI + repositório + parser) para simplificar, mas dá para modularizar depois se quiser.</p>
+          </article>
+
+          <article>
+            <header>
+              <h2>Mapa do projeto</h2>
+            </header>
+            <pre><code>bible/
+  lib/
+    main.dart
+    bible_app.dart
+  json/
+    index.json
+    *.json (versões da Bíblia)
+  xml/
+    *.xml (fontes alternativas)
+  test/
+    widget_test.dart
+  pubspec.yaml
+            </code></pre>
+            <p class="muted">As pastas <code>android/</code>, <code>ios/</code>, <code>macos/</code> e <code>web/</code> são geradas/gerenciadas pelo Flutter para cada plataforma.</p>
+          </article>
+
+          <article>
+            <header>
+              <h2>Como ler esta documentação</h2>
+            </header>
+            <ul>
+              <li><a href="./arquivos.html">Arquivos principais</a>: o que cada arquivo/pasta contém.</li>
+              <li><a href="./arquitetura.html">Arquitetura e fluxo</a>: como os dados viram UI, e onde ficam as regras (capítulos/testamentos).</li>
+              <li><a href="./dados.html">Dados</a>: formato dos JSON/XML e como adicionar uma versão.</li>
+              <li><a href="./desenvolvimento.html">Desenvolvimento</a>: comandos úteis, testes e pontos de atenção.</li>
+            </ul>
+          </article>
+        </section>
+      </div>
+    </main>
+    <footer class="container">
+      <small class="muted">CSS: Pico.css via CDN. Arquivos gerados localmente em <code>document/</code>.</small>
+    </footer>
+  </body>
+</html>
