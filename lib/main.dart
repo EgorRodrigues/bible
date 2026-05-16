@@ -1,9 +1,30 @@
+import 'dart:async';
+import 'dart:ui';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'bible_app.dart';
 
 void main() {
-  runApp(const BibleStudyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Uncaught error: $error');
+    debugPrint('$stack');
+    return true;
+  };
+
+  runZonedGuarded(() {
+    runApp(const BibleStudyApp());
+  }, (error, stack) {
+    debugPrint('Zone error: $error');
+    debugPrint('$stack');
+  });
 }
 
 class BibleStudyApp extends StatelessWidget {

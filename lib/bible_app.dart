@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -40,29 +39,26 @@ class _BibleAppState extends State<BibleApp> {
 }
 
 class BibleRepository {
-  BibleRepository({AssetBundle? assetBundle, bool useCompute = true})
-      : _assetBundle = assetBundle ?? rootBundle,
-        _useCompute = useCompute;
+  BibleRepository({AssetBundle? assetBundle}) : _assetBundle = assetBundle ?? rootBundle;
 
   final AssetBundle _assetBundle;
-  final bool _useCompute;
 
   Future<List<BibleVersionRef>>? _versionsFuture;
-  final Map<String, Future<List<BibleBook>>> _booksByVersion = {};
+  final Map<String, Future<_BibleSource>> _sourceByVersion = {};
 
   Future<List<BibleVersionRef>> listVersions() {
     return _versionsFuture ??= _loadVersions();
   }
 
-  Future<List<BibleBook>> loadBooks(String versionAbbreviation) {
-    return _booksByVersion[versionAbbreviation] ??=
-        _loadBooksForVersion(versionAbbreviation);
+  Future<List<BibleBookRef>> listBooks(String versionAbbreviation) async {
+    final source = await _loadSource(versionAbbreviation);
+    return source.books;
   }
 
   Future<List<BibleVersionRef>> _loadVersions() async {
     final raw = await _assetBundle.loadString('json/index.json');
     final normalized = _stripBom(raw);
-    final dynamic decoded = _useCompute ? await compute(_decodeJson, normalized) : _decodeJson(normalized);
+    final dynamic decoded = json.decode(normalized);
     final List<dynamic> languages = decoded as List<dynamic>;
 
     final List<BibleVersionRef> versions = [];
@@ -91,24 +87,50 @@ class BibleRepository {
     return versions;
   }
 
-  Future<List<BibleBook>> _loadBooksForVersion(String versionAbbreviation) async {
+  Future<List<String>> loadChapter({
+    required String versionAbbreviation,
+    required int bookIndex,
+    required int chapterIndex,
+  }) async {
+    final source = await _loadSource(versionAbbreviation);
+    if (bookIndex < 0 || bookIndex >= source.bookSpans.length) {
+      throw RangeError.range(bookIndex, 0, source.bookSpans.length - 1, 'bookIndex');
+    }
+
+    final bookSpan = source.bookSpans[bookIndex];
+    final bookObject = source.json.substring(bookSpan.start, bookSpan.end);
+    final chaptersArraySpan = _JsonScanner.findArrayValueSpan(bookObject, 'chapters');
+    final chaptersArray = bookObject.substring(chaptersArraySpan.start, chaptersArraySpan.end);
+    final chapterSpan = _JsonScanner.nthTopLevelArrayItemSpan(chaptersArray, chapterIndex);
+    final chapterJson = chaptersArray.substring(chapterSpan.start, chapterSpan.end);
+    final dynamic decoded = json.decode(chapterJson);
+    final List<dynamic> rawVerses = decoded as List<dynamic>;
+    return rawVerses.map((v) => v.toString()).toList(growable: false);
+  }
+
+  Future<_BibleSource> _loadSource(String versionAbbreviation) {
+    return _sourceByVersion[versionAbbreviation] ??=
+        _loadSourceForVersion(versionAbbreviation);
+  }
+
+  Future<_BibleSource> _loadSourceForVersion(String versionAbbreviation) async {
     final raw = await _assetBundle.loadString('json/$versionAbbreviation.json');
     final normalized = _stripBom(raw);
-    final dynamic decoded = _useCompute ? await compute(_decodeJson, normalized) : _decodeJson(normalized);
-    final List<dynamic> rawBooks = decoded as List<dynamic>;
 
-    return rawBooks.map((dynamic item) {
-      final map = item as Map<String, dynamic>;
-      final abbrev = (map['abbrev'] as String?)?.trim() ?? '';
-      final name = (map['name'] as String?)?.trim() ?? abbrev;
-      final chapters = (map['chapters'] as List<dynamic>? ?? const [])
-          .map(
-            (dynamic c) =>
-                (c as List<dynamic>).map((dynamic v) => v.toString()).toList(growable: false),
-          )
-          .toList(growable: false);
-      return BibleBook(abbrev: abbrev, name: name, chapters: chapters);
-    }).toList(growable: false);
+    final bookSpans = _JsonScanner.topLevelArrayItemSpans(normalized);
+    final books = <BibleBookRef>[];
+    for (var i = 0; i < bookSpans.length; i++) {
+      final span = bookSpans[i];
+      final bookObject = normalized.substring(span.start, span.end);
+      final abbrev = _JsonScanner.readStringField(bookObject, 'abbrev')?.trim() ?? '';
+      final name = _JsonScanner.readStringField(bookObject, 'name')?.trim() ?? abbrev;
+      final chaptersArraySpan = _JsonScanner.findArrayValueSpan(bookObject, 'chapters');
+      final chaptersArray = bookObject.substring(chaptersArraySpan.start, chaptersArraySpan.end);
+      final chapterCount = _JsonScanner.countTopLevelArrayItems(chaptersArray);
+      books.add(BibleBookRef(index: i, abbrev: abbrev, name: name, chapterCount: chapterCount));
+    }
+
+    return _BibleSource(json: normalized, bookSpans: bookSpans, books: books);
   }
 }
 
@@ -129,16 +151,18 @@ class BibleVersionRef {
   }
 }
 
-class BibleBook {
-  const BibleBook({
+class BibleBookRef {
+  const BibleBookRef({
+    required this.index,
     required this.abbrev,
     required this.name,
-    required this.chapters,
+    required this.chapterCount,
   });
 
+  final int index;
   final String abbrev;
   final String name;
-  final List<List<String>> chapters;
+  final int chapterCount;
 }
 
 class HomePage extends StatefulWidget {
@@ -153,7 +177,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   late final Future<List<BibleVersionRef>> _versionsFuture;
   BibleVersionRef? _selectedVersion;
-  Future<List<BibleBook>>? _booksFuture;
+  Future<List<BibleBookRef>>? _booksFuture;
 
   @override
   void initState() {
@@ -164,7 +188,7 @@ class _HomePageState extends State<HomePage> {
   void _setSelected(BibleVersionRef version) {
     setState(() {
       _selectedVersion = version;
-      _booksFuture = widget.repository.loadBooks(version.abbreviation);
+      _booksFuture = widget.repository.listBooks(version.abbreviation);
     });
   }
 
@@ -192,7 +216,16 @@ class _HomePageState extends State<HomePage> {
                   orElse: () => versions.first,
                 )!;
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _selectedVersion == null) _setSelected(preferred);
+              if (!mounted || _selectedVersion != null) return;
+              setState(() {
+                _selectedVersion = preferred;
+              });
+              Future<void>.delayed(const Duration(milliseconds: 50), () {
+                if (!mounted || _booksFuture != null) return;
+                setState(() {
+                  _booksFuture = widget.repository.listBooks(preferred.abbreviation);
+                });
+              });
             });
           }
 
@@ -225,7 +258,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const Divider(height: 1),
-              Expanded(child: _BooksList(booksFuture: _booksFuture)),
+              Expanded(
+                child: _BooksList(
+                  booksFuture: _booksFuture,
+                  repository: widget.repository,
+                  selectedVersion: _selectedVersion,
+                ),
+              ),
             ],
           );
         },
@@ -235,9 +274,15 @@ class _HomePageState extends State<HomePage> {
 }
 
 class _BooksList extends StatelessWidget {
-  const _BooksList({required this.booksFuture});
+  const _BooksList({
+    required this.booksFuture,
+    required this.repository,
+    required this.selectedVersion,
+  });
 
-  final Future<List<BibleBook>>? booksFuture;
+  final Future<List<BibleBookRef>>? booksFuture;
+  final BibleRepository repository;
+  final BibleVersionRef? selectedVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -246,7 +291,12 @@ class _BooksList extends StatelessWidget {
       return const Center(child: Text('Selecione uma versão para carregar os livros.'));
     }
 
-    return FutureBuilder<List<BibleBook>>(
+    final version = selectedVersion;
+    if (version == null) {
+      return const Center(child: Text('Selecione uma versão para carregar os livros.'));
+    }
+
+    return FutureBuilder<List<BibleBookRef>>(
       future: future,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -260,19 +310,32 @@ class _BooksList extends StatelessWidget {
         }
 
         final books = snapshot.data!;
+        final split = _TestamentBooks.fromBooks(books);
+        final rows = <_TestamentRow>[];
+        if (split.old.isNotEmpty) {
+          rows.add(_TestamentRow(title: 'Velho Testamento', books: split.old));
+        }
+        if (split.newTestament.isNotEmpty) {
+          rows.add(_TestamentRow(title: 'Novo Testamento', books: split.newTestament));
+        }
         return ListView.separated(
-          itemCount: books.length,
+          itemCount: rows.length,
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (context, index) {
-            final book = books[index];
+            final row = rows[index];
             return ListTile(
-              title: Text(book.name),
-              subtitle: Text('${book.chapters.length} capítulo(s)'),
+              title: Text(row.title),
+              subtitle: Text('${row.books.length} livro(s)'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (context) => ChaptersPage(book: book),
+                    builder: (context) => TestamentBooksPage(
+                      repository: repository,
+                      versionAbbreviation: version.abbreviation,
+                      title: row.title,
+                      books: row.books,
+                    ),
                   ),
                 );
               },
@@ -284,31 +347,70 @@ class _BooksList extends StatelessWidget {
   }
 }
 
-class ChaptersPage extends StatelessWidget {
-  const ChaptersPage({super.key, required this.book});
+class _TestamentRow {
+  const _TestamentRow({required this.title, required this.books});
+  final String title;
+  final List<BibleBookRef> books;
+}
 
-  final BibleBook book;
+class _TestamentBooks {
+  const _TestamentBooks({required this.old, required this.newTestament});
+
+  final List<BibleBookRef> old;
+  final List<BibleBookRef> newTestament;
+
+  static const int _oldTestamentBookCount = 39;
+
+  static _TestamentBooks fromBooks(List<BibleBookRef> books) {
+    final old = <BibleBookRef>[];
+    final newTestament = <BibleBookRef>[];
+
+    for (final book in books) {
+      if (book.index < _oldTestamentBookCount) {
+        old.add(book);
+      } else {
+        newTestament.add(book);
+      }
+    }
+
+    return _TestamentBooks(old: old, newTestament: newTestament);
+  }
+}
+
+class TestamentBooksPage extends StatelessWidget {
+  const TestamentBooksPage({
+    super.key,
+    required this.repository,
+    required this.versionAbbreviation,
+    required this.title,
+    required this.books,
+  });
+
+  final BibleRepository repository;
+  final String versionAbbreviation;
+  final String title;
+  final List<BibleBookRef> books;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(book.name)),
+      appBar: AppBar(title: Text(title)),
       body: ListView.separated(
-        itemCount: book.chapters.length,
+        itemCount: books.length,
         separatorBuilder: (_, __) => const Divider(height: 1),
         itemBuilder: (context, index) {
-          final chapterNumber = index + 1;
+          final book = books[index];
           return ListTile(
-            title: Text('Capítulo $chapterNumber'),
-            subtitle: Text('${book.chapters[index].length} versículo(s)'),
+            title: Text(book.name),
+            subtitle: Text('${book.chapterCount} capítulo(s)'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (context) => VersesPage(
-                    bookName: book.name,
-                    chapterNumber: chapterNumber,
-                    verses: book.chapters[index],
+                  builder: (context) => ChaptersPage(
+                    repository: repository,
+                    versionAbbreviation: versionAbbreviation,
+                    book: book,
                   ),
                 ),
               );
@@ -320,45 +422,124 @@ class ChaptersPage extends StatelessWidget {
   }
 }
 
-class VersesPage extends StatelessWidget {
-  const VersesPage({
+class ChaptersPage extends StatelessWidget {
+  const ChaptersPage({
     super.key,
-    required this.bookName,
-    required this.chapterNumber,
-    required this.verses,
+    required this.repository,
+    required this.versionAbbreviation,
+    required this.book,
   });
 
-  final String bookName;
-  final int chapterNumber;
-  final List<String> verses;
+  final BibleRepository repository;
+  final String versionAbbreviation;
+  final BibleBookRef book;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('$bookName $chapterNumber')),
+      appBar: AppBar(title: Text(book.name)),
       body: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: verses.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 4),
+        itemCount: book.chapterCount,
+        separatorBuilder: (_, __) => const Divider(height: 1),
         itemBuilder: (context, index) {
-          final verseNumber = index + 1;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$verseNumber  ',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+          final chapterNumber = index + 1;
+          return ListTile(
+            title: Text('Capítulo $chapterNumber'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => VersesPage(
+                    repository: repository,
+                    versionAbbreviation: versionAbbreviation,
+                    book: book,
+                    chapterIndex: index,
                   ),
-                  TextSpan(text: verses[index]),
-                ],
-              ),
-              textAlign: TextAlign.start,
-            ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class VersesPage extends StatefulWidget {
+  const VersesPage({
+    super.key,
+    required this.repository,
+    required this.versionAbbreviation,
+    required this.book,
+    required this.chapterIndex,
+  });
+
+  final BibleRepository repository;
+  final String versionAbbreviation;
+  final BibleBookRef book;
+  final int chapterIndex;
+
+  @override
+  State<VersesPage> createState() => _VersesPageState();
+}
+
+class _VersesPageState extends State<VersesPage> {
+  late final Future<List<String>> _versesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _versesFuture = widget.repository.loadChapter(
+      versionAbbreviation: widget.versionAbbreviation,
+      bookIndex: widget.book.index,
+      chapterIndex: widget.chapterIndex,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chapterNumber = widget.chapterIndex + 1;
+    return Scaffold(
+      appBar: AppBar(title: Text('${widget.book.name} $chapterNumber')),
+      body: FutureBuilder<List<String>>(
+        future: _versesFuture,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _ErrorState(
+              title: 'Falha ao carregar versículos',
+              message: '${snapshot.error}',
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final verses = snapshot.data!;
+          return ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            itemCount: verses.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 4),
+            itemBuilder: (context, index) {
+              final verseNumber = index + 1;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '$verseNumber  ',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      TextSpan(text: verses[index]),
+                    ],
+                  ),
+                  textAlign: TextAlign.start,
+                ),
+              );
+            },
           );
         },
       ),
@@ -396,6 +577,342 @@ String _stripBom(String value) {
   return value;
 }
 
-dynamic _decodeJson(String raw) {
-  return json.decode(raw);
+class _BibleSource {
+  const _BibleSource({required this.json, required this.bookSpans, required this.books});
+
+  final String json;
+  final List<_Span> bookSpans;
+  final List<BibleBookRef> books;
+}
+
+class _Span {
+  const _Span(this.start, this.end);
+  final int start;
+  final int end;
+}
+
+class _JsonScanner {
+  static List<_Span> topLevelArrayItemSpans(String jsonArray) {
+    var i = 0;
+    while (i < jsonArray.length && jsonArray.codeUnitAt(i) != 0x5B) {
+      i++;
+    }
+    if (i >= jsonArray.length) {
+      throw FormatException('JSON array esperado');
+    }
+
+    var inString = false;
+    var escaped = false;
+    var depth = 0;
+    int? itemStart;
+    final spans = <_Span>[];
+
+    for (; i < jsonArray.length; i++) {
+      final c = jsonArray.codeUnitAt(i);
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (c == 0x5C) {
+          escaped = true;
+          continue;
+        }
+        if (c == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (c == 0x22) {
+        inString = true;
+        continue;
+      }
+
+      if (c == 0x5B || c == 0x7B) {
+        depth++;
+        if (depth == 1) {
+          continue;
+        }
+        if (depth == 2 && itemStart == null) {
+          itemStart = i;
+        }
+        continue;
+      }
+
+      if (c == 0x5D || c == 0x7D) {
+        if (depth == 2 && itemStart != null) {
+          spans.add(_Span(itemStart, i + 1));
+          itemStart = null;
+        }
+        depth--;
+        continue;
+      }
+    }
+
+    return spans;
+  }
+
+  static int countTopLevelArrayItems(String jsonArray) {
+    var i = 0;
+    while (i < jsonArray.length && jsonArray.codeUnitAt(i) != 0x5B) {
+      i++;
+    }
+    if (i >= jsonArray.length) {
+      throw FormatException('JSON array esperado');
+    }
+
+    var inString = false;
+    var escaped = false;
+    var depth = 0;
+    var count = 0;
+    var expectingValueAtDepth1 = true;
+
+    for (; i < jsonArray.length; i++) {
+      final c = jsonArray.codeUnitAt(i);
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (c == 0x5C) {
+          escaped = true;
+          continue;
+        }
+        if (c == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (c == 0x22) {
+        if (depth == 1 && expectingValueAtDepth1) {
+          count++;
+          expectingValueAtDepth1 = false;
+        }
+        inString = true;
+        continue;
+      }
+
+      if (c == 0x5B || c == 0x7B) {
+        depth++;
+        if (depth == 2 && expectingValueAtDepth1) {
+          count++;
+          expectingValueAtDepth1 = false;
+        }
+        continue;
+      }
+
+      if (c == 0x5D || c == 0x7D) {
+        if (c == 0x5D && depth == 1) {
+          return count;
+        }
+        depth--;
+        continue;
+      }
+
+      if (depth != 1) {
+        continue;
+      }
+
+      if (c == 0x2C) {
+        expectingValueAtDepth1 = true;
+        continue;
+      }
+
+      if (c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09) {
+        continue;
+      }
+
+      if (expectingValueAtDepth1) {
+        count++;
+        expectingValueAtDepth1 = false;
+      }
+    }
+
+    return count;
+  }
+
+  static _Span nthTopLevelArrayItemSpan(String jsonArray, int index) {
+    if (index < 0) {
+      throw RangeError.range(index, 0, null, 'index');
+    }
+
+    var i = 0;
+    while (i < jsonArray.length && jsonArray.codeUnitAt(i) != 0x5B) {
+      i++;
+    }
+    if (i >= jsonArray.length) {
+      throw FormatException('JSON array esperado');
+    }
+
+    var inString = false;
+    var escaped = false;
+    var depth = 0;
+    int? itemStart;
+    var current = -1;
+
+    for (; i < jsonArray.length; i++) {
+      final c = jsonArray.codeUnitAt(i);
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (c == 0x5C) {
+          escaped = true;
+          continue;
+        }
+        if (c == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (c == 0x22) {
+        inString = true;
+        continue;
+      }
+
+      if (c == 0x5B || c == 0x7B) {
+        depth++;
+        if (depth == 2 && itemStart == null) {
+          current++;
+          if (current == index) {
+            itemStart = i;
+          }
+        }
+        continue;
+      }
+
+      if (c == 0x5D || c == 0x7D) {
+        if (depth == 2 && itemStart != null && current == index) {
+          return _Span(itemStart, i + 1);
+        }
+        depth--;
+        continue;
+      }
+    }
+
+    throw RangeError.range(index, 0, current, 'index');
+  }
+
+  static String? readStringField(String objectJson, String key) {
+    final keyToken = '"$key"';
+    final keyIndex = objectJson.indexOf(keyToken);
+    if (keyIndex < 0) return null;
+
+    var i = keyIndex + keyToken.length;
+    while (i < objectJson.length && objectJson.codeUnitAt(i) != 0x3A) {
+      i++;
+    }
+    if (i >= objectJson.length) return null;
+    i++;
+
+    while (i < objectJson.length) {
+      final c = objectJson.codeUnitAt(i);
+      if (c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09) {
+        i++;
+        continue;
+      }
+      break;
+    }
+    if (i >= objectJson.length || objectJson.codeUnitAt(i) != 0x22) return null;
+
+    final start = i;
+    i++;
+    var escaped = false;
+    for (; i < objectJson.length; i++) {
+      final c = objectJson.codeUnitAt(i);
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c == 0x5C) {
+        escaped = true;
+        continue;
+      }
+      if (c == 0x22) {
+        final rawStringLiteral = objectJson.substring(start, i + 1);
+        return json.decode(rawStringLiteral) as String;
+      }
+    }
+    return null;
+  }
+
+  static _Span findArrayValueSpan(String objectJson, String key) {
+    final keyToken = '"$key"';
+    final keyIndex = objectJson.indexOf(keyToken);
+    if (keyIndex < 0) {
+      throw FormatException('Campo "$key" não encontrado');
+    }
+
+    var i = keyIndex + keyToken.length;
+    while (i < objectJson.length && objectJson.codeUnitAt(i) != 0x3A) {
+      i++;
+    }
+    if (i >= objectJson.length) {
+      throw FormatException('Campo "$key" inválido');
+    }
+    i++;
+
+    while (i < objectJson.length) {
+      final c = objectJson.codeUnitAt(i);
+      if (c == 0x20 || c == 0x0A || c == 0x0D || c == 0x09) {
+        i++;
+        continue;
+      }
+      break;
+    }
+    if (i >= objectJson.length || objectJson.codeUnitAt(i) != 0x5B) {
+      throw FormatException('Campo "$key" não é um array');
+    }
+
+    final start = i;
+    var inString = false;
+    var escaped = false;
+    var depth = 0;
+
+    for (; i < objectJson.length; i++) {
+      final c = objectJson.codeUnitAt(i);
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (c == 0x5C) {
+          escaped = true;
+          continue;
+        }
+        if (c == 0x22) {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (c == 0x22) {
+        inString = true;
+        continue;
+      }
+
+      if (c == 0x5B) {
+        depth++;
+        continue;
+      }
+
+      if (c == 0x5D) {
+        depth--;
+        if (depth == 0) {
+          return _Span(start, i + 1);
+        }
+        continue;
+      }
+    }
+
+    throw FormatException('Array "$key" não foi fechado');
+  }
 }
